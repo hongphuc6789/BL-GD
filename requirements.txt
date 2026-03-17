@@ -1,0 +1,5 @@
+streamlit==1.32.0
+pdfplumber==0.11.0
+docxtpl==0.16.7
+docx2pdf==0.1.8
+pypiwin32==223; sys_platform == 'win32'
