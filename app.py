@@ -10,18 +10,17 @@ from docxtpl import DocxTemplate
 # Đường dẫn mặc định tới file Template
 TEMPLATE_PATH = "TEMPLATE.docx"
 
-
 # Hàm chuyển đổi DOCX sang PDF linh hoạt theo hệ điều hành
 def convert_docx_to_pdf(docx_path, out_dir):
     # Nếu chạy trên Windows (Local)
     if sys.platform == "win32":
         import pythoncom
         from docx2pdf import convert
-        pythoncom.CoInitialize()
+        pythoncom.CoInitialize() 
         pdf_path = docx_path.replace(".docx", ".pdf")
         convert(docx_path, pdf_path)
         return pdf_path
-
+    
     # Nếu chạy trên Linux (Streamlit Community Cloud)
     else:
         # Gọi LibreOffice chạy ngầm để xuất PDF
@@ -37,7 +36,7 @@ def extract_crew_data(pdf_file, target_flight):
     route_info = ""
     extracting = False
     ranks_to_catch = ["CAPT", "FO", "CM", "CA", "CCITS", "SOC", "PIC", "DCCA", "CADET"]
-
+    
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
@@ -46,10 +45,10 @@ def extract_crew_data(pdf_file, target_flight):
                     clean_row = [str(cell).replace('\n', ' ').strip() if cell else "" for cell in row]
                     if not clean_row:
                         continue
-
+                    
                     flights_col = clean_row[0]
                     route_col = clean_row[1] if len(clean_row) > 1 else ""
-
+                    
                     rank_idx = -1
                     crew_idx = -1
                     for i, cell in enumerate(clean_row):
@@ -61,7 +60,7 @@ def extract_crew_data(pdf_file, target_flight):
                     if flights_col and "BL" in flights_col:
                         if target_flight in flights_col:
                             extracting = True
-                            parts = route_col.split('/')
+                            parts = route_col.split('/') 
                             route_crews = []
                             for part in parts:
                                 if 'FE' in part or 'OBS' in part:
@@ -76,7 +75,7 @@ def extract_crew_data(pdf_file, target_flight):
                             route_info = "\n".join(route_crews)
                         else:
                             extracting = False
-
+                    
                     if extracting and rank_idx != -1 and crew_idx != -1:
                         rank = clean_row[rank_idx]
                         crew_member = clean_row[crew_idx]
@@ -84,7 +83,6 @@ def extract_crew_data(pdf_file, target_flight):
                             crew_list.append(f"{rank} {crew_member}")
 
     return "\n".join(crew_list), route_info
-
 
 # --- GIAO DIỆN ---
 st.set_page_config(page_title="Crew GD Generator", layout="centered")
@@ -106,7 +104,7 @@ with st.form("gd_form"):
     with col2:
         arr_port = st.text_input("Arrival Port (vd: HAN)")
         flight_date = st.text_input("Ngày bay (vd: 17-MAR-2026)")
-
+        
     submit_btn = st.form_submit_button("Create GD")
 
 if submit_btn:
@@ -117,25 +115,25 @@ if submit_btn:
     else:
         with st.spinner("Đang xử lý dữ liệu và tạo PDF (Có thể mất 5-10 giây)..."):
             crew_str, route_info = extract_crew_data(pdf_file, flight_no)
-
+            
             if not crew_str:
                 st.warning(f"Không tìm thấy dữ liệu tổ bay cho chuyến {flight_no}.")
             else:
                 doc = DocxTemplate(TEMPLATE_PATH)
                 context = {
-                    "Fltn": flight_no.replace("BL", ""),
+                    "Fltn": flight_no.replace("BL", ""), 
                     "REG": reg_no,
                     "arr": arr_port,
                     "date": flight_date,
-                    "rank": crew_str,
-                    "route": route_info
+                    "rank": crew_str,      
+                    "route": route_info    
                 }
                 doc.render(context)
-
+                
                 temp_dir = tempfile.mkdtemp()
                 docx_path = os.path.join(temp_dir, f"GD_{flight_no}.docx")
                 doc.save(docx_path)
-
+                
                 # Chuyển đổi sang PDF
                 pdf_converted = False
                 pdf_path = ""
@@ -145,11 +143,11 @@ if submit_btn:
                 except Exception as e:
                     # Nếu lỗi, log ra để dễ fix
                     st.error(f"Tính năng xuất PDF gặp sự cố: {e}")
-
+                
                 st.success("Tạo General Declaration thành công!")
                 st.header("3. Download Kết Quả")
                 col3, col4 = st.columns(2)
-
+                
                 with open(docx_path, "rb") as d_file:
                     col3.download_button(
                         label="📄 Download DOCX",
@@ -157,7 +155,7 @@ if submit_btn:
                         file_name=f"GD_{flight_no}.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
-
+                
                 if pdf_converted and os.path.exists(pdf_path):
                     with open(pdf_path, "rb") as p_file:
                         col4.download_button(
