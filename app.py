@@ -3,19 +3,33 @@ import pdfplumber
 import re
 import os
 import tempfile
+import subprocess
+import sys
 from docxtpl import DocxTemplate
-from docx2pdf import convert
-
-# Xử lý môi trường Windows/Linux
-try:
-    import pythoncom
-
-    WINDOWS_ENV = True
-except ImportError:
-    WINDOWS_ENV = False
 
 # Đường dẫn mặc định tới file Template
 TEMPLATE_PATH = "TEMPLATE.docx"
+
+
+# Hàm chuyển đổi DOCX sang PDF linh hoạt theo hệ điều hành
+def convert_docx_to_pdf(docx_path, out_dir):
+    # Nếu chạy trên Windows (Local)
+    if sys.platform == "win32":
+        import pythoncom
+        from docx2pdf import convert
+        pythoncom.CoInitialize()
+        pdf_path = docx_path.replace(".docx", ".pdf")
+        convert(docx_path, pdf_path)
+        return pdf_path
+
+    # Nếu chạy trên Linux (Streamlit Community Cloud)
+    else:
+        # Gọi LibreOffice chạy ngầm để xuất PDF
+        subprocess.run([
+            "libreoffice", "--headless", "--convert-to", "pdf",
+            "--outdir", out_dir, docx_path
+        ], check=True)
+        return docx_path.replace(".docx", ".pdf")
 
 
 def extract_crew_data(pdf_file, target_flight):
@@ -76,7 +90,6 @@ def extract_crew_data(pdf_file, target_flight):
 st.set_page_config(page_title="Crew GD Generator", layout="centered")
 st.title("✈️ General Declaration Generator")
 
-# Kiểm tra file template
 if not os.path.exists(TEMPLATE_PATH):
     st.error(f"❌ Lỗi hệ thống: Không tìm thấy file gốc '{TEMPLATE_PATH}'. Vui lòng liên hệ Admin.")
     st.stop()
@@ -102,17 +115,13 @@ if submit_btn:
     elif not flight_no:
         st.error("⚠️ Vui lòng nhập số hiệu chuyến bay.")
     else:
-        with st.spinner("Đang xử lý dữ liệu..."):
+        with st.spinner("Đang xử lý dữ liệu và tạo PDF (Có thể mất 5-10 giây)..."):
             crew_str, route_info = extract_crew_data(pdf_file, flight_no)
 
             if not crew_str:
                 st.warning(f"Không tìm thấy dữ liệu tổ bay cho chuyến {flight_no}.")
             else:
-                st.success("Trích xuất dữ liệu tổ bay thành công!")
-
-                # Trỏ thẳng vào file Template cố định
                 doc = DocxTemplate(TEMPLATE_PATH)
-
                 context = {
                     "Fltn": flight_no.replace("BL", ""),
                     "REG": reg_no,
@@ -121,24 +130,23 @@ if submit_btn:
                     "rank": crew_str,
                     "route": route_info
                 }
-
                 doc.render(context)
 
                 temp_dir = tempfile.mkdtemp()
                 docx_path = os.path.join(temp_dir, f"GD_{flight_no}.docx")
-                pdf_path = os.path.join(temp_dir, f"GD_{flight_no}.pdf")
                 doc.save(docx_path)
 
-                # Cố gắng xuất PDF nếu môi trường cho phép
+                # Chuyển đổi sang PDF
                 pdf_converted = False
+                pdf_path = ""
                 try:
-                    if WINDOWS_ENV:
-                        pythoncom.CoInitialize()
-                    convert(docx_path, pdf_path)
+                    pdf_path = convert_docx_to_pdf(docx_path, temp_dir)
                     pdf_converted = True
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Nếu lỗi, log ra để dễ fix
+                    st.error(f"Tính năng xuất PDF gặp sự cố: {e}")
 
+                st.success("Tạo General Declaration thành công!")
                 st.header("3. Download Kết Quả")
                 col3, col4 = st.columns(2)
 
@@ -150,7 +158,7 @@ if submit_btn:
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
 
-                if pdf_converted:
+                if pdf_converted and os.path.exists(pdf_path):
                     with open(pdf_path, "rb") as p_file:
                         col4.download_button(
                             label="📕 Download PDF",
@@ -158,6 +166,3 @@ if submit_btn:
                             file_name=f"GD_{flight_no}.pdf",
                             mime="application/pdf"
                         )
-                else:
-                    st.info(
-                        "💡 Lưu ý: Tính năng xuất file PDF tự động hiện không khả dụng trên server này. Bạn vui lòng tải file DOCX về máy tính để in hoặc lưu thành PDF nhé.")
