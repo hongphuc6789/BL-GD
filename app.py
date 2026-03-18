@@ -137,3 +137,44 @@ if submit_btn:
                     "Fltn": flight_no.replace("BL", ""), 
                     "REG": reg_no,
                     "arr": arr_port,
+                    "date": flight_date,
+                    "rank": crew_str,      
+                    "route": route_info    
+                }
+                doc.render(context)
+                
+                # Lưu file tạm thời
+                temp_dir = tempfile.mkdtemp()
+                docx_path = os.path.join(temp_dir, f"GD_{flight_no}.docx")
+                doc.save(docx_path)
+                
+                # Chuyển đổi DOCX sang PDF
+                pdf_converted = False
+                pdf_path = ""
+                try:
+                    pdf_path = convert_docx_to_pdf(docx_path, temp_dir)
+                    pdf_converted = True
+                except Exception as e:
+                    st.error(f"Tính năng xuất PDF gặp sự cố: {e}")
+                
+                st.success(f"Tạo General Declaration cho chuyến {flight_no} thành công! 🎉")
+                
+                st.header("3. Download Kết Quả")
+                col3, col4 = st.columns(2)
+                
+                with open(docx_path, "rb") as d_file:
+                    col3.download_button(
+                        label="📄 Download DOCX",
+                        data=d_file,
+                        file_name=f"GD_{flight_no}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                
+                if pdf_converted and os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as p_file:
+                        col4.download_button(
+                            label="📕 Download PDF",
+                            data=p_file,
+                            file_name=f"GD_{flight_no}.pdf",
+                            mime="application/pdf"
+                        )
