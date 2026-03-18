@@ -50,12 +50,10 @@ def extract_crew_data(pdf_file, target_flight):
                     flights_col = clean_row[0] if len(clean_row) > 0 else ""
                     
                     # BƯỚC 1: TÌM BLOCK CHUYẾN BAY DỰA VÀO CỘT FLIGHTS
-                    # Nếu cột đầu tiên chứa chữ "BL" (nghĩa là bắt đầu một cụm chuyến bay mới)
                     if "BL" in flights_col and "Flights" not in flights_col:
                         if target_flight in flights_col:
-                            extracting = True # Bật cờ bắt đầu lấy data
+                            extracting = True
                             
-                            # Lấy FE/OBS luôn ở hàng này
                             route_col = clean_row[1] if len(clean_row) > 1 else ""
                             parts = route_col.split('/') 
                             for part in parts:
@@ -73,20 +71,27 @@ def extract_crew_data(pdf_file, target_flight):
                                             if r_crew not in route_crews:
                                                 route_crews.append(r_crew)
                         else:
-                            extracting = False # Gặp chuyến bay khác -> Tắt cờ
+                            extracting = False
                     
                     # BƯỚC 2: GOM CREW KHI CỜ ĐANG BẬT
                     if extracting:
-                        # Trong format bảng của bạn, Rank thường là cột áp chót (-2), Crew Member là cột cuối (-1)
                         if len(clean_row) >= 2:
-                            rank = clean_row[-2]
-                            member = clean_row[-1]
+                            rank = clean_row[-2].strip()
+                            member = clean_row[-1].strip()
                             
-                            # Đảm bảo không lấy nhầm header của bảng và bỏ qua các ô trống
-                            if rank and member and rank.lower() != 'rank' and member.lower() != 'crew member':
-                                crew_str = f"{rank} {member}"
-                                if crew_str not in crew_list: # Tránh trùng lặp nếu bảng bị cắt giữa 2 trang
-                                    crew_list.append(crew_str)
+                            # Loại bỏ các dòng trống hoặc dòng Header (Tiêu đề bảng)
+                            if not rank or not member or rank.lower() == 'rank' or member.lower() == 'crew member':
+                                continue
+                                
+                            # --- CHỐT CHẶN MỚI ---
+                            # Loại bỏ ngay lập tức nếu cột "Rank" chứa chữ số hoặc dấu gạch ngang (Đây là dữ liệu ngày giờ Duty)
+                            if re.search(r'\d', rank) or '-' in rank:
+                                continue
+                            # ---------------------
+                                
+                            crew_str = f"{rank} {member}"
+                            if crew_str not in crew_list: 
+                                crew_list.append(crew_str)
 
     route_info = "\n".join(route_crews)
     return "\n".join(crew_list), route_info
