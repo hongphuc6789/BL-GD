@@ -30,58 +30,65 @@ def convert_docx_to_pdf(docx_path, out_dir):
         ], check=True)
         return docx_path.replace(".docx", ".pdf")
 
-
 def extract_crew_data(pdf_file, target_flight):
     crew_list = []
-    route_info = ""
+    route_crews = []
     extracting = False
-    ranks_to_catch = ["CAPT", "FO", "CM", "CA", "CCITS", "SOC", "PIC", "DCCA", "CADET"]
     
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
+                    # Làm sạch dữ liệu, thay thế xuống dòng bằng khoảng trắng
                     clean_row = [str(cell).replace('\n', ' ').strip() if cell else "" for cell in row]
-                    if not clean_row:
+                    
+                    # Bỏ qua các hàng trống hoàn toàn
+                    if not any(clean_row):
                         continue
                     
-                    flights_col = clean_row[0]
-                    route_col = clean_row[1] if len(clean_row) > 1 else ""
+                    flights_col = clean_row[0] if len(clean_row) > 0 else ""
                     
-                    rank_idx = -1
-                    crew_idx = -1
-                    for i, cell in enumerate(clean_row):
-                        if cell in ranks_to_catch:
-                            rank_idx = i
-                            crew_idx = i + 1 if i + 1 < len(clean_row) else -1
-                            break
-
-                    if flights_col and "BL" in flights_col:
+                    # BƯỚC 1: TÌM BLOCK CHUYẾN BAY DỰA VÀO CỘT FLIGHTS
+                    # Nếu cột đầu tiên chứa chữ "BL" (nghĩa là bắt đầu một cụm chuyến bay mới)
+                    if "BL" in flights_col and "Flights" not in flights_col:
                         if target_flight in flights_col:
-                            extracting = True
+                            extracting = True # Bật cờ bắt đầu lấy data
+                            
+                            # Lấy FE/OBS luôn ở hàng này
+                            route_col = clean_row[1] if len(clean_row) > 1 else ""
                             parts = route_col.split('/') 
-                            route_crews = []
                             for part in parts:
                                 if 'FE' in part or 'OBS' in part:
                                     if target_flight in part:
                                         match = re.search(r'(FE|OBS).*', part)
                                         if match:
-                                            route_crews.append(match.group(0).strip())
+                                            r_crew = match.group(0).strip()
+                                            if r_crew not in route_crews:
+                                                route_crews.append(r_crew)
                                     elif not re.search(r'BL\d+', part):
                                         match = re.search(r'(FE|OBS).*', part)
                                         if match:
-                                            route_crews.append(match.group(0).strip())
-                            route_info = "\n".join(route_crews)
+                                            r_crew = match.group(0).strip()
+                                            if r_crew not in route_crews:
+                                                route_crews.append(r_crew)
                         else:
-                            extracting = False
+                            extracting = False # Gặp chuyến bay khác -> Tắt cờ
                     
-                    if extracting and rank_idx != -1 and crew_idx != -1:
-                        rank = clean_row[rank_idx]
-                        crew_member = clean_row[crew_idx]
-                        if crew_member:
-                            crew_list.append(f"{rank} {crew_member}")
+                    # BƯỚC 2: GOM CREW KHI CỜ ĐANG BẬT
+                    if extracting:
+                        # Trong format bảng của bạn, Rank thường là cột áp chót (-2), Crew Member là cột cuối (-1)
+                        if len(clean_row) >= 2:
+                            rank = clean_row[-2]
+                            member = clean_row[-1]
+                            
+                            # Đảm bảo không lấy nhầm header của bảng và bỏ qua các ô trống
+                            if rank and member and rank.lower() != 'rank' and member.lower() != 'crew member':
+                                crew_str = f"{rank} {member}"
+                                if crew_str not in crew_list: # Tránh trùng lặp nếu bảng bị cắt giữa 2 trang
+                                    crew_list.append(crew_str)
 
+    route_info = "\n".join(route_crews)
     return "\n".join(crew_list), route_info
 
 # --- GIAO DIỆN ---
@@ -141,7 +148,6 @@ if submit_btn:
                     pdf_path = convert_docx_to_pdf(docx_path, temp_dir)
                     pdf_converted = True
                 except Exception as e:
-                    # Nếu lỗi, log ra để dễ fix
                     st.error(f"Tính năng xuất PDF gặp sự cố: {e}")
                 
                 st.success("Tạo General Declaration thành công!")
