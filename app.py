@@ -10,9 +10,8 @@ from docxtpl import DocxTemplate
 # Đường dẫn mặc định tới file Template cố định
 TEMPLATE_PATH = "TEMPLATE.docx"
 
-# Hàm chuyển đổi DOCX sang PDF linh hoạt theo hệ điều hành (Local Windows vs Streamlit Cloud Linux)
+# Hàm chuyển đổi DOCX sang PDF linh hoạt theo hệ điều hành
 def convert_docx_to_pdf(docx_path, out_dir):
-    # Nếu chạy trên Windows (Local)
     if sys.platform == "win32":
         import pythoncom
         from docx2pdf import convert
@@ -20,10 +19,7 @@ def convert_docx_to_pdf(docx_path, out_dir):
         pdf_path = docx_path.replace(".docx", ".pdf")
         convert(docx_path, pdf_path)
         return pdf_path
-    
-    # Nếu chạy trên Linux (Streamlit Community Cloud)
     else:
-        # Gọi LibreOffice chạy ngầm để xuất PDF
         subprocess.run([
             "libreoffice", "--headless", "--convert-to", "pdf",
             "--outdir", out_dir, docx_path
@@ -40,21 +36,17 @@ def extract_crew_data(pdf_file, target_flight):
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    # Làm sạch dữ liệu, thay thế xuống dòng bằng khoảng trắng
                     clean_row = [str(cell).replace('\n', ' ').strip() if cell else "" for cell in row]
                     
-                    # Bỏ qua các hàng trống hoàn toàn
                     if not any(clean_row):
                         continue
                     
                     flights_col = clean_row[0] if len(clean_row) > 0 else ""
                     
-                    # BƯỚC 1: TÌM BLOCK CHUYẾN BAY DỰA VÀO CỘT FLIGHTS
                     if "BL" in flights_col and "Flights" not in flights_col:
                         if target_flight in flights_col:
                             extracting = True
                             
-                            # Quét tìm FE/OBS ở cột Route
                             route_col = clean_row[1] if len(clean_row) > 1 else ""
                             parts = route_col.split('/') 
                             for part in parts:
@@ -72,19 +64,16 @@ def extract_crew_data(pdf_file, target_flight):
                                             if r_crew not in route_crews:
                                                 route_crews.append(r_crew)
                         else:
-                            extracting = False # Đã sang chuyến bay khác -> Tắt cờ
+                            extracting = False
                     
-                    # BƯỚC 2: GOM CREW KHI CỜ ĐANG BẬT
                     if extracting:
                         if len(clean_row) >= 2:
                             rank = clean_row[-2].strip()
                             member = clean_row[-1].strip()
                             
-                            # Loại bỏ các dòng trống hoặc dòng Header (Tiêu đề bảng)
                             if not rank or not member or rank.lower() == 'rank' or member.lower() == 'crew member':
                                 continue
                                 
-                            # Loại bỏ ngay lập tức nếu cột "Rank" chứa chữ số hoặc dấu gạch ngang (Đây là dữ liệu ngày giờ Duty bị vướng vào)
                             if re.search(r'\d', rank) or '-' in rank:
                                 continue
                                 
@@ -99,7 +88,6 @@ def extract_crew_data(pdf_file, target_flight):
 st.set_page_config(page_title="Crew GD Generator", layout="centered", page_icon="✈️")
 st.title("✈️ General Declaration Generator")
 
-# Kiểm tra file template cứng
 if not os.path.exists(TEMPLATE_PATH):
     st.error(f"❌ Lỗi hệ thống: Không tìm thấy file gốc '{TEMPLATE_PATH}'. Vui lòng kiểm tra lại thư mục chứa code.")
     st.stop()
@@ -131,6 +119,38 @@ if submit_btn:
             if not crew_str:
                 st.warning(f"Không tìm thấy dữ liệu tổ bay cho chuyến {flight_no}. Vui lòng kiểm tra lại số hiệu.")
             else:
+                # ---------------------------------------------------------
+                # HIỂN THỊ GIAO DIỆN PREVIEW (XEM TRƯỚC) TRỰC QUAN
+                # ---------------------------------------------------------
+                st.success(f"Trích xuất dữ liệu chuyến {flight_no} thành công! 🎉")
+                
+                st.header("👀 Xem trước nội dung (Preview)")
+                # Tạo một khung viền (border) để nhìn giống tờ giấy
+                with st.container(border=True):
+                    st.markdown("<h4 style='text-align: center;'>GENERAL DECLARATION</h4>", unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Chia 2 cột cho phần Header của giấy GD
+                    p_col1, p_col2 = st.columns(2)
+                    with p_col1:
+                        st.markdown("**Operator:** PACIFIC AIRLINES")
+                        st.markdown(f"**Registration:** VN-A**{reg_no}**")
+                        st.markdown("**Departure from:** DAD")
+                    with p_col2:
+                        st.markdown(f"**Flight No.:** BL**{flight_no.replace('BL', '')}**")
+                        st.markdown(f"**Date:** **{flight_date}**")
+                        st.markdown(f"**Arrival at:** **{arr_port}**")
+                        
+                    st.divider() # Đường gạch ngang phân cách
+                    
+                    # Phần hiển thị Crew List
+                    st.markdown("**NAMES OF CREW***")
+                    # Dùng st.text để giữ nguyên định dạng xuống dòng của danh sách
+                    st.text(crew_str)
+                    if route_info:
+                        st.text(route_info)
+                # ---------------------------------------------------------
+
                 # Render dữ liệu vào Word Template
                 doc = DocxTemplate(TEMPLATE_PATH)
                 context = {
@@ -143,7 +163,6 @@ if submit_btn:
                 }
                 doc.render(context)
                 
-                # Lưu file tạm thời
                 temp_dir = tempfile.mkdtemp()
                 docx_path = os.path.join(temp_dir, f"GD_{flight_no}.docx")
                 doc.save(docx_path)
@@ -157,8 +176,7 @@ if submit_btn:
                 except Exception as e:
                     st.error(f"Tính năng xuất PDF gặp sự cố: {e}")
                 
-                st.success(f"Tạo General Declaration cho chuyến {flight_no} thành công! 🎉")
-                
+                # Phần Download Files
                 st.header("3. Download Kết Quả")
                 col3, col4 = st.columns(2)
                 
