@@ -47,22 +47,38 @@ def extract_crew_data(pdf_file, target_flight):
                         if target_flight in flights_col:
                             extracting = True
                             
+                            # --- LOGIC MỚI: ĐỌC ROUTE CÓ NHỚ NGỮ CẢNH ---
                             route_col = clean_row[1] if len(clean_row) > 1 else ""
                             parts = route_col.split('/') 
+                            current_flight_context = None
+                            current_role = None
+                            
                             for part in parts:
-                                if 'FE' in part or 'OBS' in part:
-                                    if target_flight in part:
-                                        match = re.search(r'(FE|OBS).*', part)
-                                        if match:
-                                            r_crew = match.group(0).strip()
+                                part = part.strip()
+                                # 1. Cập nhật "trí nhớ" nếu thấy mã chuyến bay mới
+                                flight_match = re.search(r'(BL\d+)', part)
+                                if flight_match:
+                                    current_flight_context = flight_match.group(1)
+                                
+                                # 2. Chỉ bốc FE/OBS nếu đang ở đúng ngữ cảnh của chuyến bay mục tiêu
+                                # (Hoặc nếu chuỗi này không hề có chuyến bay nào từ đầu đến cuối -> dùng chung)
+                                if current_flight_context is None or current_flight_context == target_flight:
+                                    role_match = re.search(r'(FE|OBS):?\s*(.*)', part)
+                                    if role_match:
+                                        current_role = role_match.group(1).strip()
+                                        name = role_match.group(2).strip()
+                                        if name:
+                                            r_crew = f"{current_role}: {name}"
                                             if r_crew not in route_crews:
                                                 route_crews.append(r_crew)
-                                    elif not re.search(r'BL\d+', part):
-                                        match = re.search(r'(FE|OBS).*', part)
-                                        if match:
-                                            r_crew = match.group(0).strip()
+                                                
+                                    # 3. Cứu người bị cắt bởi dấu / (Ví dụ: / DANG DUC QUYNH)
+                                    elif current_role and not flight_match:
+                                        if len(part) > 3 and not re.search(r'[A-Z]{3}-[A-Z]{3}', part):
+                                            r_crew = f"{current_role}: {part}"
                                             if r_crew not in route_crews:
                                                 route_crews.append(r_crew)
+                            # ---------------------------------------------
                         else:
                             extracting = False
                     
@@ -119,18 +135,13 @@ if submit_btn:
             if not crew_str:
                 st.warning(f"Không tìm thấy dữ liệu tổ bay cho chuyến {flight_no}. Vui lòng kiểm tra lại số hiệu.")
             else:
-                # ---------------------------------------------------------
-                # HIỂN THỊ GIAO DIỆN PREVIEW (XEM TRƯỚC) TRỰC QUAN
-                # ---------------------------------------------------------
                 st.success(f"Trích xuất dữ liệu chuyến {flight_no} thành công! 🎉")
                 
                 st.header("👀 Xem trước nội dung (Preview)")
-                # Tạo một khung viền (border) để nhìn giống tờ giấy
                 with st.container(border=True):
                     st.markdown("<h4 style='text-align: center;'>GENERAL DECLARATION</h4>", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # Chia 2 cột cho phần Header của giấy GD
                     p_col1, p_col2 = st.columns(2)
                     with p_col1:
                         st.markdown("**Operator:** PACIFIC AIRLINES")
@@ -141,17 +152,13 @@ if submit_btn:
                         st.markdown(f"**Date:** **{flight_date}**")
                         st.markdown(f"**Arrival at:** **{arr_port}**")
                         
-                    st.divider() # Đường gạch ngang phân cách
+                    st.divider() 
                     
-                    # Phần hiển thị Crew List
                     st.markdown("**NAMES OF CREW***")
-                    # Dùng st.text để giữ nguyên định dạng xuống dòng của danh sách
                     st.text(crew_str)
                     if route_info:
                         st.text(route_info)
-                # ---------------------------------------------------------
 
-                # Render dữ liệu vào Word Template
                 doc = DocxTemplate(TEMPLATE_PATH)
                 context = {
                     "Fltn": flight_no.replace("BL", ""), 
@@ -167,7 +174,6 @@ if submit_btn:
                 docx_path = os.path.join(temp_dir, f"GD_{flight_no}.docx")
                 doc.save(docx_path)
                 
-                # Chuyển đổi DOCX sang PDF
                 pdf_converted = False
                 pdf_path = ""
                 try:
@@ -176,7 +182,6 @@ if submit_btn:
                 except Exception as e:
                     st.error(f"Tính năng xuất PDF gặp sự cố: {e}")
                 
-                # Phần Download Files
                 st.header("3. Download Kết Quả")
                 col3, col4 = st.columns(2)
                 
