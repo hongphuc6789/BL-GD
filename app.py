@@ -47,7 +47,7 @@ def extract_crew_data(pdf_file, target_flight):
                         if target_flight in flights_col:
                             extracting = True
                             
-                            # --- LOGIC MỚI: ĐỌC ROUTE CÓ NHỚ NGỮ CẢNH ---
+                            # --- LOGIC ĐỌC ROUTE CÓ NHỚ NGỮ CẢNH ---
                             route_col = clean_row[1] if len(clean_row) > 1 else ""
                             parts = route_col.split('/') 
                             current_flight_context = None
@@ -55,13 +55,10 @@ def extract_crew_data(pdf_file, target_flight):
                             
                             for part in parts:
                                 part = part.strip()
-                                # 1. Cập nhật "trí nhớ" nếu thấy mã chuyến bay mới
                                 flight_match = re.search(r'(BL\d+)', part)
                                 if flight_match:
                                     current_flight_context = flight_match.group(1)
                                 
-                                # 2. Chỉ bốc FE/OBS nếu đang ở đúng ngữ cảnh của chuyến bay mục tiêu
-                                # (Hoặc nếu chuỗi này không hề có chuyến bay nào từ đầu đến cuối -> dùng chung)
                                 if current_flight_context is None or current_flight_context == target_flight:
                                     role_match = re.search(r'(FE|OBS):?\s*(.*)', part)
                                     if role_match:
@@ -72,13 +69,11 @@ def extract_crew_data(pdf_file, target_flight):
                                             if r_crew not in route_crews:
                                                 route_crews.append(r_crew)
                                                 
-                                    # 3. Cứu người bị cắt bởi dấu / (Ví dụ: / DANG DUC QUYNH)
                                     elif current_role and not flight_match:
                                         if len(part) > 3 and not re.search(r'[A-Z]{3}-[A-Z]{3}', part):
                                             r_crew = f"{current_role}: {part}"
                                             if r_crew not in route_crews:
                                                 route_crews.append(r_crew)
-                            # ---------------------------------------------
                         else:
                             extracting = False
                     
@@ -87,7 +82,13 @@ def extract_crew_data(pdf_file, target_flight):
                             rank = clean_row[-2].strip()
                             member = clean_row[-1].strip()
                             
-                            if not rank or not member or rank.lower() == 'rank' or member.lower() == 'crew member':
+                            rank_lower = rank.lower()
+                            member_lower = member.lower()
+                            
+                            # Danh sách đen: Loại bỏ ngay nếu quét trúng các Header của bảng
+                            ignore_words = ['rank', 'crew member', 'local duty', 'utc duty', 'flights', 'route']
+                            
+                            if not rank or not member or rank_lower in ignore_words or member_lower in ignore_words:
                                 continue
                                 
                             if re.search(r'\d', rank) or '-' in rank:
